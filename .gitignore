@@ -1,0 +1,10 @@
+# Básico PHP/Moodle
+/vendor/
+/node_modules/
+/cache/
+/localcache/
+*.log
+.DS_Store
+.idea/
+*.zip
+*.tar.gz
