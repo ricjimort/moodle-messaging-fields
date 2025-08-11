@@ -7,44 +7,47 @@ use external_api;
 use external_function_parameters;
 use external_value;
 use external_single_structure;
+use context_system;
 
 class send extends external_api {
 
     public static function execute_parameters() {
         return new external_function_parameters([
-            'userid'   => new external_value(PARAM_INT, 'ID del usuario destinatario'),
-            'message'  => new external_value(PARAM_RAW, 'Mensaje con placeholders'),
-            'courseid' => new external_value(PARAM_INT, 'ID del curso (opcional)', VALUE_DEFAULT, 0),
+            'userid'  => new external_value(PARAM_INT, 'ID destino'),
+            'message' => new external_value(PARAM_RAW, 'Mensaje con placeholders'),
+            'courseid'=> new external_value(PARAM_INT, 'Curso (opcional)', VALUE_DEFAULT, 0),
+            'subject' => new external_value(PARAM_TEXT, 'Asunto (opcional)', VALUE_DEFAULT, '')
         ]);
     }
 
-    public static function execute($userid, $message, $courseid = 0) {
-        global $USER;
+    public static function execute($userid, $message, $courseid = 0, $subject = '') {
+        global $DB, $USER;
+        self::validate_context(context_system::instance());
+        self::require_capability('local/pmerge:send', context_system::instance());
 
-        self::validate_parameters(self::execute_parameters(), [
+        $params = self::validate_parameters(self::execute_parameters(), [
             'userid' => $userid,
             'message' => $message,
-            'courseid' => $courseid
+            'courseid' => $courseid,
+            'subject' => $subject
         ]);
 
-        require_capability('local/pmerge:send', \context_system::instance());
+        $touser = $DB->get_record('user', ['id' => $params['userid'], 'deleted' => 0], '*', MUST_EXIST);
+        $course = $params['courseid'] ? $DB->get_record('course', ['id' => $params['courseid']], '*', IGNORE_MISSING) : null;
 
-        $user = \core_user::get_user($userid, '*', MUST_EXIST);
-        $course = $courseid ? get_course($courseid) : null;
-
-        $message = \local_pmerge\local\tokens::replace($message, $user, $course);
+        $text = \local_pmerge\local\tokens::replace($params['message'], $touser, $course);
 
         $msg = new \core\message\message();
         $msg->component         = 'moodle';
         $msg->name              = 'instantmessage';
         $msg->userfrom          = $USER;
-        $msg->userto            = $user;
-        $msg->subject           = '';
-        $msg->fullmessage       = $message;
-        $msg->fullmessageformat = FORMAT_HTML;
-        $msg->fullmessagehtml   = $message;
+        $msg->userto            = $touser;
+        $msg->subject           = $params['subject'];
+        $msg->fullmessage       = $text;
+        $msg->fullmessageformat = FORMAT_PLAIN;
+        $msg->fullmessagehtml   = '';
         $msg->smallmessage      = '';
-        $msg->notification      = '0';
+        $msg->notification      = 0;
 
         \core_message\api::send_message($msg);
 

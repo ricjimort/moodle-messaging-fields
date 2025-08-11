@@ -1,97 +1,59 @@
-define('local_pmerge/pmerge', ['core/ajax', 'core/log'], function(Ajax, Log) {
+define(['core/ajax', 'core/str', 'core/log'], function(Ajax, Str, Log) {
 
     function getCourseIdFromUrl() {
         try {
             var url = new URL(window.location.href);
             var id = url.searchParams.get('id');
-            if (id) { return parseInt(id, 10) || 0; }
-        } catch(e){}
-        return 0;
+            return id ? (parseInt(id, 10) || 0) : 0;
+        } catch (e) { return 0; }
     }
 
     function getSelectedRecipients() {
         var ids = [];
-
-        document.querySelectorAll('input[type="checkbox"][name="user"]:checked, input[type="checkbox"][name="users[]"]:checked').forEach(function(cb){
-            var uid = cb.value || cb.dataset.userid || cb.getAttribute('data-userid');
-            if (uid) { ids.push(parseInt(uid, 10)); }
+        document.querySelectorAll('input[type="checkbox"][name="users[]"]:checked').forEach(function(cb){
+            var uid = parseInt(cb.value || cb.dataset.userid || cb.getAttribute('data-userid'), 10);
+            if (uid && ids.indexOf(uid) === -1) { ids.push(uid); }
         });
-
-        if (ids.length === 0) {
-            document.querySelectorAll('[data-user-id]').forEach(function(el){
-                var uid = el.getAttribute('data-user-id');
-                if (uid) { ids.push(parseInt(uid, 10)); }
-            });
-        }
-        ids = Array.from(new Set(ids)).filter(function(x){ return !!x; });
         return ids;
     }
 
-    function sendPersonalized(userid, rawMsg, courseid) {
+    function sendOne(userid, message, courseid, subject) {
         return Ajax.call([{
             methodname: 'local_pmerge_send',
-            args: { userid: userid, message: rawMsg, courseid: courseid }
+            args: { userid: userid, message: message, courseid: courseid, subject: subject }
         }])[0];
     }
 
-    function hasPlaceholders(text) {
-        return /\{\{(firstname|fullname|coursename)\}\}/.test(text);
-    }
-
     function bindSendHandler() {
-        document.addEventListener('click', function(e){
-            var btn = e.target.closest('[data-action="send-message"], button[name="sendmessage"], button[data-region="send-message-button"]');
-            if (!btn) { return; }
+        var courseid = getCourseIdFromUrl();
 
-            var textarea = document.querySelector('textarea, [contenteditable="true"]');
-            if (!textarea) { return; }
+        var btn = document.querySelector('[data-action="message-send"], button[name="sendmessage"], .pmerge-send');
+        if (!btn) {
+            Log.debug('local_pmerge: send button not found on this page');
+            return;
+        }
 
-            var rawMsg = textarea.value !== undefined ? textarea.value : (textarea.innerHTML || textarea.textContent || '');
+        btn.addEventListener('click', function(e){
+            if (e.defaultPrevented) { return; }
 
-            if (!hasPlaceholders(rawMsg)) { return; }
-
-            var recipients = getSelectedRecipients();
-            if (recipients.length === 0) {
-                var header = document.querySelector('[data-region="view-conversation"] [data-user-id]');
-                if (header) {
-                    var oneid = parseInt(header.getAttribute('data-user-id'), 10);
-                    if (oneid) { recipients = [oneid]; }
-                }
-            }
-
-            if (recipients.length === 0) {
-                Log.debug('pmerge: no recipients detected; letting Moodle handle normally');
-                return;
-            }
+            var ids = getSelectedRecipients();
+            if (!ids.length) { return; }
 
             e.preventDefault();
-            btn.disabled = true;
 
-            var courseid = getCourseIdFromUrl();
-            var pending = recipients.length;
-            var errors = [];
+            var textarea = document.querySelector('textarea[name="message"], textarea[id*="message"]');
+            var subject = (document.querySelector('input[name="subject"]') || {}).value || '';
+            var text = textarea ? textarea.value : '';
+            if (!text) { return; }
 
-            recipients.forEach(function(uid){
-                sendPersonalized(uid, rawMsg, courseid).done(function(resp){
-                    // ok
-                }).fail(function(err){
-                    errors.push(uid);
-                }).always(function(){
-                    pending--;
-                    if (pending === 0) {
-                        btn.disabled = false;
-                        try {
-                            if (textarea.value !== undefined) { textarea.value = ''; } else { textarea.innerHTML = ''; }
-                        } catch(e){}
-                        if (errors.length) {
-                            alert('Mensajes enviados con errores para: ' + errors.join(', '));
-                        } else {
-                            alert('Mensajes personalizados enviados correctamente.');
-                        }
-                    }
-                });
+            Promise.all(ids.map(function(uid){
+                return sendOne(uid, text, courseid, subject);
+            })).then(function(){
+                Log.debug('local_pmerge: messages sent: ' + ids.length);
+            }).catch(function(err){
+                Log.error(err);
             });
-        }, true);
+        }, { once: false });
     }
 
     function init() {
@@ -103,7 +65,7 @@ define('local_pmerge/pmerge', ['core/ajax', 'core/log'], function(Ajax, Log) {
         } else {
             bindSendHandler();
         }
-        Log.debug('local_pmerge v0.1.3: bound');
+        Log.debug('local_pmerge: init ok');
     }
 
     return { init: init };

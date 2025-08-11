@@ -15,7 +15,7 @@ if ($hassiteconfig) {
         'local_pmerge/batchlimit',
         get_string('batchlimit', 'local_pmerge'),
         get_string('batchlimit_desc', 'local_pmerge'),
-        200,
+        50,
         PARAM_INT
     ));
 
