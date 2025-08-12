@@ -22,6 +22,12 @@ class send extends external_api {
 
     public static function execute($userid, $message, $courseid = 0, $subject = '') {
         global $DB, $USER;
+        
+            // 💡 Esta es la línea al inicio (depuración de entrada)
+            error_log("PMERGE[IN]: userid={$userid}, courseid={$courseid}, subject=" . substr((string)$subject,0,80));
+            error_log("PMERGE[IN]: rawMessage=" . substr((string)$message,0,200));
+            // FIN Depuración
+        
         self::validate_context(context_system::instance());
         self::require_capability('local/pmerge:send', context_system::instance());
 
@@ -36,6 +42,14 @@ class send extends external_api {
         $course = $params['courseid'] ? $DB->get_record('course', ['id' => $params['courseid']], '*', IGNORE_MISSING) : null;
 
         $text = \local_pmerge\local\tokens::replace($params['message'], $touser, $course);
+
+                // --- DEBUG ANTES DE ENVIAR ---
+                $debuguser = isset($touser->id) ? $touser->id : 0;
+                $coursename = $course && isset($course->fullname) ? $course->fullname : '';
+                error_log("PMERGE[OUT]: touserid={$debuguser}, coursename=" . substr($coursename,0,80));
+                error_log("PMERGE[OUT]: replaced=" . substr($text,0,200));
+                // --- FIN DEBUG ---
+
 
         $msg = new \core\message\message();
         $msg->component         = 'moodle';
